@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>F1 Racer - Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Arial Narrow', Arial, sans-serif;
+    color: #fff;
+  }
+  h1 {
+    margin-bottom: 10px;
+    letter-spacing: 4px;
+    color: #e10600;
+    text-shadow: 2px 2px 0 #000;
+  }
+  #hud {
+    display: flex;
+    gap: 30px;
+    margin-bottom: 10px;
+    font-size: 18px;
+    font-weight: bold;
+  }
+  #hud span { color: #e10600; }
+  #gameCanvas {
+    background: #333;
+    border: 4px solid #e10600;
+    border-radius: 8px;
+    display: block;
+  }
+  #msg {
+    margin-top: 12px;
+    font-size: 14px;
+    color: #aaa;
+    text-align: center;
+    min-height: 40px;
+  }
+  #overlay {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    text-align: center;
+  }
+  button {
+    margin-top: 14px;
+    padding: 10px 24px;
+    font-size: 16px;
+    font-weight: bold;
+    background: #e10600;
+    border: none;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+  }
+  button:hover { background: #ff2a20; }
+</style>
+</head>
+<body>
+  <h1>🏁 F1 RACER</h1>
+  <div id="hud">
+    <div>VELOCIDAD: <span id="speedVal">0</span> km/h</div>
+    <div>PUNTOS: <span id="scoreVal">0</span></div>
+    <div>MEJOR: <span id="bestVal">0</span></div>
+  </div>
+  <canvas id="gameCanvas" width="400" height="600"></canvas>
+  <div id="msg">Usa ← → o A / D para esquivar. ¡No choques!</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+const LANES = 3;
+const LANE_W = W / LANES;
+const CAR_W = 44, CAR_H = 74;
+
+let player, rivals, roadOffset, score, speed, baseSpeed, running, spawnTimer, best;
+let keys = {};
+best = Number(localStorage.getItem('f1_best') || 0);
+document.getElementById('bestVal').textContent = best;
+
+function laneX(lane) {
+  return lane * LANE_W + LANE_W / 2 - CAR_W / 2;
+}
+
+function reset() {
+  player = { lane: 1, x: laneX(1), y: H - 120, targetX: laneX(1) };
+  rivals = [];
+  roadOffset = 0;
+  score = 0;
+  baseSpeed = 4;
+  speed = baseSpeed;
+  spawnTimer = 0;
+  running = true;
+  document.getElementById('msg').textContent = 'Usa ← → o A / D para esquivar. ¡No choques!';
+}
+
+function spawnRival() {
+  const lane = Math.floor(Math.random() * LANES);
+  // avoid stacking directly on another rival too close
+  rivals.push({ lane, x: laneX(lane), y: -CAR_H, color: randColor() });
+}
+
+function randColor() {
+  const colors = ['#1e5bd4', '#ffcc00', '#2ecc71', '#9b59b6', '#e67e22', '#ffffff'];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
+
+function drawCar(x, y, bodyColor, isPlayer) {
+  ctx.save();
+  ctx.translate(x, y);
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(4, 6, CAR_W, CAR_H);
+  // body
+  ctx.fillStyle = bodyColor;
+  ctx.fillRect(0, 10, CAR_W, CAR_H - 20);
+  // nose
+  ctx.beginPath();
+  ctx.moveTo(0, 10);
+  ctx.lineTo(CAR_W / 2, 0);
+  ctx.lineTo(CAR_W, 10);
+  ctx.closePath();
+  ctx.fill();
+  // tail wing
+  ctx.fillRect(-3, CAR_H - 14, CAR_W + 6, 6);
+  // cockpit
+  ctx.fillStyle = isPlayer ? '#e10600' : '#111';
+  ctx.fillRect(CAR_W / 2 - 8, 24, 16, 20);
+  // wheels
+  ctx.fillStyle = '#111';
+  ctx.fillRect(-4, 14, 8, 18);
+  ctx.fillRect(CAR_W - 4, 14, 8, 18);
+  ctx.fillRect(-4, CAR_H - 36, 8, 18);
+  ctx.fillRect(CAR_W - 4, CAR_H - 36, 8, 18);
+  ctx.restore();
+}
+
+function drawRoad() {
+  ctx.fillStyle = '#333';
+  ctx.fillRect(0, 0, W, H);
+  // lane dashes
+  ctx.strokeStyle = '#f4d03f';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([28, 24]);
+  for (let l = 1; l < LANES; l++) {
+    ctx.beginPath();
+    ctx.moveTo(l * LANE_W, -40 + (roadOffset % 52));
+    ctx.lineTo(l * LANE_W, H);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  // edges
+  ctx.fillStyle = '#e10600';
+  ctx.fillRect(0, 0, 6, H);
+  ctx.fillRect(W - 6, 0, 6, H);
+}
+
+function update() {
+  if (!running) return;
+
+  // move player toward target lane
+  const dx = player.targetX - player.x;
+  player.x += dx * 0.25;
+
+  roadOffset += speed;
+  speed += 0.0025; // gradual acceleration
+
+  spawnTimer -= 1;
+  if (spawnTimer <= 0) {
+    spawnRival();
+    spawnTimer = Math.max(28, 60 - speed * 3);
+  }
+
+  for (const r of rivals) {
+    r.y += speed;
+  }
+  rivals = rivals.filter(r => r.y < H + CAR_H);
+
+  // collision check
+  for (const r of rivals) {
+    if (
+      Math.abs(r.y - player.y) < CAR_H - 18 &&
+      Math.abs(r.x - player.x) < CAR_W - 12
+    ) {
+      gameOver();
+      break;
+    }
+  }
+
+  score += speed * 0.05;
+
+  document.getElementById('speedVal').textContent = Math.round(speed * 22);
+  document.getElementById('scoreVal').textContent = Math.floor(score);
+}
+
+function gameOver() {
+  running = false;
+  if (Math.floor(score) > best) {
+    best = Math.floor(score);
+    localStorage.setItem('f1_best', best);
+    document.getElementById('bestVal').textContent = best;
+  }
+  document.getElementById('msg').innerHTML =
+    `💥 ¡Choque! Puntuación: <strong>${Math.floor(score)}</strong> — Presiona <strong>Espacio</strong> o toca la pista para reiniciar`;
+}
+
+function draw() {
+  drawRoad();
+  for (const r of rivals) drawCar(r.x, r.y, r.color, false);
+  drawCar(player.x, player.y, '#e10600', true);
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function moveLeft() {
+  if (!running) return;
+  player.lane = Math.max(0, player.lane - 1);
+  player.targetX = laneX(player.lane);
+}
+function moveRight() {
+  if (!running) return;
+  player.lane = Math.min(LANES - 1, player.lane + 1);
+  player.targetX = laneX(player.lane);
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') moveLeft();
+  if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') moveRight();
+  if (e.key === ' ' && !running) reset();
+});
+
+canvas.addEventListener('click', (e) => {
+  if (!running) { reset(); return; }
+  const rect = canvas.getBoundingClientRect();
+  const clickX = e.clientX - rect.left;
+  if (clickX < W / 2) moveLeft(); else moveRight();
+});
+
+// basic touch support
+let touchStartX = null;
+canvas.addEventListener('touchstart', (e) => {
+  touchStartX = e.touches[0].clientX;
+}, { passive: true });
+canvas.addEventListener('touchend', (e) => {
+  if (!running) { reset(); return; }
+  if (touchStartX === null) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = touchStartX - rect.left;
+  if (x < W / 2) moveLeft(); else moveRight();
+  touchStartX = null;
+});
+
+reset();
+loop();
+</script>
+</body>
+</html>

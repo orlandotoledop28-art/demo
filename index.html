@@ -64,14 +64,26 @@
     cursor: pointer;
   }
   button:hover { background: #ff2a20; }
+  #langToggle {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    margin: 0;
+    padding: 6px 14px;
+    font-size: 13px;
+    background: #222;
+    border: 2px solid #e10600;
+  }
+  #langToggle:hover { background: #333; }
 </style>
 </head>
 <body>
-  <h1>🏁 F1 RACER</h1>
+  <button id="langToggle">ES 🇪🇸 / EN 🇬🇧</button>
+  <h1 id="title">🏁 F1 RACER</h1>
   <div id="hud">
-    <div>VELOCIDAD: <span id="speedVal">0</span> km/h</div>
-    <div>PUNTOS: <span id="scoreVal">0</span></div>
-    <div>MEJOR: <span id="bestVal">0</span></div>
+    <div id="hudSpeedLabel">VELOCIDAD: <span id="speedVal">0</span> km/h</div>
+    <div id="hudScoreLabel">PUNTOS: <span id="scoreVal">0</span></div>
+    <div id="hudBestLabel">MEJOR: <span id="bestVal">0</span></div>
   </div>
   <canvas id="gameCanvas" width="400" height="600"></canvas>
   <div id="msg">Usa ← → o A / D para esquivar. ¡No choques!</div>
@@ -90,6 +102,58 @@ let keys = {};
 best = Number(localStorage.getItem('f1_best') || 0);
 document.getElementById('bestVal').textContent = best;
 
+const translations = {
+  es: {
+    pageTitle: 'F1 Racer - Demo',
+    title: '🏁 F1 RACER',
+    speedLabel: 'VELOCIDAD:',
+    speedUnit: 'km/h',
+    scoreLabel: 'PUNTOS:',
+    bestLabel: 'MEJOR:',
+    hint: 'Usa ← → o A / D para esquivar. ¡No choques!',
+    crash: '💥 ¡Choque! Puntuación:',
+    restart: 'Presiona <strong>Espacio</strong> o toca la pista para reiniciar',
+  },
+  en: {
+    pageTitle: 'F1 Racer - Demo',
+    title: '🏁 F1 RACER',
+    speedLabel: 'SPEED:',
+    speedUnit: 'km/h',
+    scoreLabel: 'SCORE:',
+    bestLabel: 'BEST:',
+    hint: 'Use ← → or A / D to dodge. Don\'t crash!',
+    crash: '💥 Crash! Score:',
+    restart: 'Press <strong>Space</strong> or tap the track to restart',
+  },
+};
+
+let lang = (localStorage.getItem('f1_lang')) || (navigator.language.toLowerCase().startsWith('es') ? 'es' : 'en');
+
+function t() {
+  return translations[lang];
+}
+
+function applyLang() {
+  const tr = t();
+  document.documentElement.lang = lang;
+  document.title = tr.pageTitle;
+  document.getElementById('title').textContent = tr.title;
+  document.getElementById('hudSpeedLabel').innerHTML = `${tr.speedLabel} <span id="speedVal">${Math.round(speed ? speed * 22 : 0)}</span> ${tr.speedUnit}`;
+  document.getElementById('hudScoreLabel').innerHTML = `${tr.scoreLabel} <span id="scoreVal">${Math.floor(score || 0)}</span>`;
+  document.getElementById('hudBestLabel').innerHTML = `${tr.bestLabel} <span id="bestVal">${best}</span>`;
+  if (running) {
+    document.getElementById('msg').textContent = tr.hint;
+  } else if (score !== undefined) {
+    document.getElementById('msg').innerHTML = `${tr.crash} <strong>${Math.floor(score)}</strong> — ${tr.restart}`;
+  }
+}
+
+document.getElementById('langToggle').addEventListener('click', () => {
+  lang = lang === 'es' ? 'en' : 'es';
+  localStorage.setItem('f1_lang', lang);
+  applyLang();
+});
+
 function laneX(lane) {
   return lane * LANE_W + LANE_W / 2 - CAR_W / 2;
 }
@@ -103,7 +167,7 @@ function reset() {
   speed = baseSpeed;
   spawnTimer = 0;
   running = true;
-  document.getElementById('msg').textContent = 'Usa ← → o A / D para esquivar. ¡No choques!';
+  document.getElementById('msg').textContent = t().hint;
 }
 
 function spawnRival() {
@@ -212,8 +276,9 @@ function gameOver() {
     localStorage.setItem('f1_best', best);
     document.getElementById('bestVal').textContent = best;
   }
+  const tr = t();
   document.getElementById('msg').innerHTML =
-    `💥 ¡Choque! Puntuación: <strong>${Math.floor(score)}</strong> — Presiona <strong>Espacio</strong> o toca la pista para reiniciar`;
+    `${tr.crash} <strong>${Math.floor(score)}</strong> — ${tr.restart}`;
 }
 
 function draw() {
@@ -266,6 +331,7 @@ canvas.addEventListener('touchend', (e) => {
   touchStartX = null;
 });
 
+applyLang();
 reset();
 loop();
 </script>
